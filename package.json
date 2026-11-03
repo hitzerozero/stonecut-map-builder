@@ -1,0 +1,48 @@
+{
+  "name": "stonecut-map-builder",
+  "version": "0.1.0",
+  "description": "MCP server and skill that let a coding agent build Minecraft maps on a private test server on your own computer.",
+  "license": "MIT",
+  "author": "Stonecut Studio",
+  "type": "module",
+  "bin": {
+    "stonecut-map-builder": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "docs",
+    "config.example.json",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.check.json",
+    "smoke": "node scripts/smoke.mjs",
+    "e2e": "node scripts/e2e.mjs",
+    "mutation-check": "node scripts/mutation-check.mjs"
+  },
+  "keywords": [
+    "mcp",
+    "minecraft",
+    "schematic",
+    "rcon",
+    "map"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
