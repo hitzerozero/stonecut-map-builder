@@ -17,6 +17,9 @@ import { type BatchResult, emptyResult, mergeResults, runInOrder, runParallel } 
 import { resolveInside, shown } from '../safety/paths.js';
 import { readSponge, writeSponge, type Schematic, type SpongeVersion } from '../schematic/sponge.js';
 import { AIR, type AreaRead, type Dimension, readArea, regionDir } from '../world/region.js';
+import { readEntities, toSchematicEntities, type WorldEntity } from '../world/entities.js';
+import { removeCommands, summonCommands, uuidString } from '../mc/entities.js';
+import type { SchematicEntity } from '../schematic/sponge.js';
 import { UndoStore, type UndoEntry } from './undo.js';
 
 // Block work on the test server: keeps the area loaded, takes a snapshot for undo first,
@@ -43,6 +46,14 @@ export interface ChangeResult {
   warnings: string[];
   undo: number | null;
   seconds: number;
+  /** Entities removed from and summoned into the area. */
+  entities?: { removed: number; summoned: number };
+}
+
+export type EntityMode = 'none' | 'replace' | 'restore';
+
+export interface AreaWithEntities extends AreaRead {
+  entities: WorldEntity[];
 }
 
 export interface ChangeOptions {
@@ -68,9 +79,69 @@ export class World {
     if (/error|failed/i.test(reply)) throw new WorldError(`Saving failed: ${reply}`);
   }
 
-  async read(box: Box, dim: Dimension): Promise<AreaRead> {
+  async read(box: Box, dim: Dimension, withEntities = false): Promise<AreaWithEntities> {
     await this.save();
-    return readArea(regionDir(this.server.worldDir, dim), box);
+    const area = await readArea(regionDir(this.server.worldDir, dim), box);
+    if (!withEntities) return { ...area, entities: [] };
+    const entities = await readEntities(regionDir(this.server.worldDir, dim, 'entities'), box);
+    this.checkEntities(entities.length, 'The area has');
+    area.schematic.entities = toSchematicEntities(entities, box);
+    area.schematic.origin = [...box.min];
+    return { ...area, entities };
+  }
+
+  /** Entities in the area right now (saved first). */
+  async entitiesIn(box: Box, dim: Dimension): Promise<WorldEntity[]> {
+    await this.save();
+    return readEntities(regionDir(this.server.worldDir, dim, 'entities'), box);
+  }
+
+  checkEntities(n: number, what: string): void {
+    if (n > this.config.maxEntities) {
+      throw new WorldError(`${what} ${n} entities, over the limit of ${this.config.maxEntities} (maxEntities in the config). Use a smaller area, or include_entities: false.`);
+    }
+  }
+
+  /** Removes entities without loot (living ones get an empty loot table first). */
+  async removeEntities(list: WorldEntity[], dim: Dimension): Promise<{ removed: number; result: BatchResult }> {
+    if (!list.length) return { removed: 0, result: emptyResult() };
+    const result = await runInOrder(await this.server.connection(), removeCommands(list).map((c) => inDimension(dim, c)), 1000);
+    result.errors = result.errors.filter((e) => !e.command.includes('DeathLootTable'));
+    return { removed: list.length, result };
+  }
+
+  /** UUIDs of the items and XP orbs in and right around the box, before a change. */
+  private async dropsBefore(box: Box, dim: Dimension): Promise<Set<string>> {
+    return new Set((await this.entitiesIn(grow(box), dim)).filter(isDrop).map((e) => e.uuid?.join(',') ?? ''));
+  }
+
+  /**
+   * Removes items and XP orbs that appeared in or right around the box during a change: blocks such as
+   * doors and torches pop off when what holds them is cleared, and leads drop when their mob goes.
+   */
+  private async sweepDrops(box: Box, dim: Dimension, before: Set<string>): Promise<number> {
+    await sleep(100);
+    const drops = (await this.entitiesIn(grow(box), dim)).filter((e) => isDrop(e) && e.uuid && !before.has(e.uuid.join(',')));
+    await runInOrder(await this.server.connection(), drops.map((e) => inDimension(dim, `kill ${uuidString(e.uuid!)}`)));
+    return drops.length;
+  }
+
+  /** Summons schematic entities with their corner at origin, in order (a summon may be followed by data merges). */
+  async summonEntities(entities: SchematicEntity[], origin: Vec3, oldOrigin: Vec3 | undefined, dim: Dimension, warnings: string[]): Promise<{ summoned: number; result: BatchResult }> {
+    if (!entities.length) return { summoned: 0, result: emptyResult() };
+    const plan = summonCommands(entities, origin, oldOrigin);
+    warnings.push(...plan.warnings);
+    const result = await runInOrder(await this.server.connection(), plan.commands.map((c) => inDimension(dim, c)), 1000);
+    const summoned = plan.commands.filter((c) => c.startsWith('summon ')).length - result.errors.filter((e) => e.command.includes('summon ')).length;
+    return { summoned, result };
+  }
+
+  /** Whether an entity with this UUID is alive anywhere loaded. A mob in its death animation counts as gone. */
+  private async alive(uuid: string): Promise<boolean> {
+    const r = await this.cmd(`data get entity ${uuid} Health`);
+    if (/No entity was found/i.test(r)) return false;
+    const m = /:\s*(-?[\d.]+)f\s*$/.exec(r.trim());
+    return !(m && Number(m[1]) <= 0);
   }
 
   /** Force-loads the chunks of boxes while fn runs, then releases only the ones it added. */
@@ -125,8 +196,8 @@ export class World {
         `The area is ${volume} blocks, too big for an undo snapshot (limit ${this.config.maxImportBlocks}). Run backup_world first, then call again with skip_backup: true.`,
       );
     }
-    const { schematic } = await this.read(box, dim);
-    return this.undo.push({ label, box, dimension: dim, blocks: volume }, writeSponge(schematic, 3));
+    const { schematic } = await this.read(box, dim, this.config.includeEntities);
+    return this.undo.push({ label, box, dimension: dim, blocks: volume, entities: this.config.includeEntities }, writeSponge(schematic, 3));
   }
 
   private async runBatch(batch: Batch, dim: Dimension): Promise<BatchResult> {
@@ -136,8 +207,9 @@ export class World {
     return mergeResults(first, second);
   }
 
-  private result(r: BatchResult, warnings: string[], undo: UndoEntry | null, began: number): ChangeResult {
+  private result(r: BatchResult, warnings: string[], undo: UndoEntry | null, began: number, entities?: { removed: number; summoned: number }): ChangeResult {
     return {
+      ...(entities ? { entities } : {}),
       commands: r.ran,
       changed: r.changed,
       unchanged: r.unchanged,
@@ -202,8 +274,34 @@ export class World {
     });
   }
 
-  /** Pastes a schematic with its corner at origin. includeAir clears the area first. */
-  async paste(s: Schematic, origin: Vec3, includeAir: boolean, opts: ChangeOptions, label: string, snapshot = true): Promise<ChangeResult> {
+  /** Sets the box to air. With entities, removes the entities in it first (undo brings them back). */
+  async clear(box: Box, opts: ChangeOptions, withEntities: boolean): Promise<ChangeResult> {
+    const began = Date.now();
+    this.checkSize(boxVolume(box), 'This clear');
+    return this.withLoaded([box], opts.dimension, async () => {
+      const undo = await this.snapshot(box, opts.dimension, 'clear', opts);
+      const drops = await this.dropsBefore(box, opts.dimension);
+      let removed = 0;
+      let r = emptyResult();
+      if (withEntities) {
+        const gone = await this.removeEntities(await this.entitiesIn(box, opts.dimension), opts.dimension);
+        removed = gone.removed;
+        r = gone.result;
+      }
+      const conns = await this.server.connections(PARALLEL);
+      r = mergeResults(r, await runParallel(conns, fillCommands(box, AIR).map((c) => inDimension(opts.dimension, c))));
+      await this.sweepDrops(box, opts.dimension, drops);
+      return this.result(r, [], undo, began, withEntities ? { removed, summoned: 0 } : undefined);
+    });
+  }
+
+  /**
+   * Pastes a schematic with its corner at origin. includeAir clears the area first.
+   * Entities: 'replace' removes the entities in the area (when includeAir) and summons those of the
+   * schematic; 'restore' (undo) removes only entities that were not there before and summons only
+   * the missing ones.
+   */
+  async paste(s: Schematic, origin: Vec3, includeAir: boolean, opts: ChangeOptions, label: string, snapshot = true, entityMode: EntityMode = 'none'): Promise<ChangeResult> {
     const began = Date.now();
     const box = boxAt(origin, [s.width, s.height, s.length]);
     const volume = boxVolume(box);
@@ -213,44 +311,88 @@ export class World {
     const { placements, warnings } = schematicPlacements(s, origin);
     const batch = packPlacements(placements);
     warnings.push(...batch.warnings);
-    return this.withLoaded([box], opts.dimension, async () => {
-      const undo = snapshot ? await this.snapshot(box, opts.dimension, label, opts) : null;
+    const entities = entityMode === 'none' ? [] : (s.entities ?? []);
+    this.checkEntities(entities.length, 'The schematic has');
+    const dim = opts.dimension;
+    return this.withLoaded([box], dim, async () => {
+      const undo = snapshot ? await this.snapshot(box, dim, label, opts) : null;
+      const drops = includeAir ? await this.dropsBefore(box, dim) : null;
       let r = emptyResult();
+      let removed = 0;
+      let toSummon = entities;
+      if (entityMode === 'replace' && includeAir) {
+        const gone = await this.removeEntities(await this.entitiesIn(box, dim), dim);
+        removed = gone.removed;
+        r = gone.result;
+      } else if (entityMode === 'restore') {
+        const before = new Set(entities.map((e) => snapshotUuid(e)).filter((u): u is string => u !== null));
+        const added = (await this.entitiesIn(box, dim)).filter((e) => !e.uuid || !before.has(uuidString(e.uuid)));
+        const gone = await this.removeEntities(added, dim);
+        removed = gone.removed;
+        r = gone.result;
+        const missing: SchematicEntity[] = [];
+        for (const e of entities) {
+          const u = snapshotUuid(e);
+          if (u === null || !(await this.alive(u))) missing.push(e);
+        }
+        toSummon = missing;
+      }
       if (includeAir) {
         const conns = await this.server.connections(PARALLEL);
-        r = await runParallel(conns, fillCommands(box, AIR).map((c) => inDimension(opts.dimension, c)));
+        r = mergeResults(r, await runParallel(conns, fillCommands(box, AIR).map((c) => inDimension(dim, c))));
       }
-      r = mergeResults(r, await this.runBatch(batch, opts.dimension));
-      return this.result(r, warnings, undo, began);
+      r = mergeResults(r, await this.runBatch(batch, dim));
+      if (drops) await this.sweepDrops(box, dim, drops);
+      let summoned = 0;
+      if (entityMode !== 'none') {
+        const made = await this.summonEntities(toSummon, origin, s.origin, dim, warnings);
+        summoned = made.summoned;
+        r = mergeResults(r, made.result);
+      }
+      return this.result(r, warnings, undo, began, entityMode === 'none' ? undefined : { removed, summoned });
     });
   }
 
-  async importFile(file: string, origin: Vec3, includeAir: boolean, opts: ChangeOptions): Promise<ChangeResult & { size: Vec3; version: SpongeVersion; dataVersion: number }> {
-    const { schematic, version } = readSponge(readFileSync(file), { maxBlocks: this.config.maxImportBlocks });
-    const r = await this.paste(schematic, origin, includeAir, opts, `import ${shown(this.server.dir, file)}`);
+  async importFile(file: string, origin: Vec3, includeAir: boolean, opts: ChangeOptions, withEntities: boolean): Promise<ChangeResult & { size: Vec3; version: SpongeVersion; dataVersion: number }> {
+    const { schematic, version } = readSponge(readFileSync(file), { maxBlocks: this.config.maxImportBlocks, ...(withEntities ? { maxEntities: this.config.maxEntities } : {}) });
+    const r = await this.paste(schematic, origin, includeAir, opts, `import ${shown(this.server.dir, file)}`, true, withEntities ? 'replace' : 'none');
     return { ...r, size: [schematic.width, schematic.height, schematic.length], version, dataVersion: schematic.dataVersion };
   }
 
-  async exportFile(box: Box, file: string, version: SpongeVersion, dim: Dimension): Promise<{ file: string; size: Vec3; blocks: number; nonAir: number; blockEntities: number; bytes: number; missingChunks: [number, number][] }> {
+  async exportFile(box: Box, file: string, version: SpongeVersion, dim: Dimension, withEntities: boolean): Promise<{ file: string; size: Vec3; blocks: number; nonAir: number; blockEntities: number; entities: number; bytes: number; missingChunks: [number, number][] }> {
     const volume = boxVolume(box);
     if (volume > this.config.maxImportBlocks) throw new WorldError(`The area is ${volume} blocks, over the limit of ${this.config.maxImportBlocks} (maxImportBlocks in the config).`);
-    const { schematic, missingChunks } = await this.read(box, dim);
+    const { schematic, missingChunks } = await this.read(box, dim, withEntities);
     const data = writeSponge(schematic, version);
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, data);
     let nonAir = 0;
     for (const i of schematic.blocks) if (!isAir(schematic.palette[i]!)) nonAir++;
-    return { file: shown(this.server.dir, file), size: boxSize(box), blocks: volume, nonAir, blockEntities: schematic.blockEntities.length, bytes: data.length, missingChunks };
+    return { file: shown(this.server.dir, file), size: boxSize(box), blocks: volume, nonAir, blockEntities: schematic.blockEntities.length, entities: schematic.entities?.length ?? 0, bytes: data.length, missingChunks };
   }
 
   async undoLast(): Promise<ChangeResult & { label: string } | null> {
     const last = this.undo.latest();
     if (!last) return null;
     const { schematic } = readSponge(last.schem);
-    const r = await this.paste(schematic, last.entry.box.min, true, { dimension: last.entry.dimension }, 'undo', false);
+    const r = await this.paste(schematic, last.entry.box.min, true, { dimension: last.entry.dimension }, 'undo', false, last.entry.entities ? 'restore' : 'none');
     if (r.errors.length === 0) this.undo.remove(last.entry.id);
     return { ...r, label: last.entry.label };
   }
+}
+
+/** The box with one more block on every side. */
+function grow(b: Box): Box {
+  return { min: [b.min[0] - 1, b.min[1] - 1, b.min[2] - 1], max: [b.max[0] + 1, b.max[1] + 1, b.max[2] + 1] };
+}
+
+function isDrop(e: WorldEntity): boolean {
+  return e.id === 'minecraft:item' || e.id === 'minecraft:experience_orb';
+}
+
+function snapshotUuid(e: SchematicEntity): string | null {
+  const u = e.data.value.get('UUID');
+  return u?.type === 'intArray' && u.value.length === 4 ? uuidString(u.value) : null;
 }
 
 export function boxFrom(from: Vec3, to: Vec3): Box {

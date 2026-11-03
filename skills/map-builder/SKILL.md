@@ -71,7 +71,8 @@ Then:
    what to change.
 6. **Undo** the last change with `undo` if a step went wrong. `status` lists what can be undone.
 
-`copy_blocks` repeats a finished part (a window, a house in a row). `run_command` covers everything
+`copy_blocks` repeats a finished part (a window, a house in a row); it copies blocks only. To copy a
+part with its entities, export it and import it at the new place. `run_command` covers everything
 else: `gamerule`, `time`, `weather`, `summon`, `give`, `setworldspawn`, `scoreboard`, `team`,
 `function`, and commands from mods.
 
@@ -100,8 +101,22 @@ then do it once they agree.
   person to put the file in the server's `schematics` folder, or copy it there for them.
 - `export_schematic` saves an area as `.schem` in the server folder. Version 3 is right for current
   WorldEdit; use version 2 for older tools. The person can paste it on a real server with WorldEdit.
-- Entities (mobs, item frames, armor stands) are not imported or exported yet. Say so if the build
-  has them.
+- Entities come along by default: item frames with their item and rotation, paintings, armor stands
+  with gear and pose, mobs with their data, minecarts, boats. Each copy gets a new UUID; leads stay
+  tied (to a fence or a mob) and riders stay seated. Use `include_entities: false` for blocks only.
+  Players are never copied. Check the result with `read_entities`.
+
+## Placing entities
+
+- Place entities with `run_command` `summon` after the blocks around them exist: frames and
+  paintings need a wall, a lead needs its fence. Stand mobs on top of the floor, not inside it.
+- Item frames and paintings hang on the block named in their `block_pos`; give `Facing` (frames) or
+  `facing` (paintings) for the side. Use `NoAI:1b` for mobs that should stay where they are.
+- `clear_blocks` removes the entities in the area too (without drops), and `undo` brings them back.
+- With nobody online, Minecraft 1.21.2 and newer pauses the server: mobs do not move, lead knots do
+  not appear and redstone does not run until someone joins. Building and commands still work. If the
+  person wants the world to run while they are away, offer to set `pause-when-empty-seconds=0` in
+  `server.properties` and restart.
 
 ## When something goes wrong
 

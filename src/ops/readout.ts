@@ -1,6 +1,10 @@
 import type { Box } from '../mc/box.js';
 import { isAir } from '../mc/blocks.js';
 import type { AreaRead } from '../world/region.js';
+import type { WorldEntity } from '../world/entities.js';
+import { nbt } from '../nbt/nbt.js';
+import { toSnbt } from '../nbt/snbt.js';
+import { uuidString } from '../mc/entities.js';
 
 // Turns an area into compact text for the agent: a palette, then one line per row of blocks
 // with repeats written as index*count.
@@ -58,5 +62,43 @@ export function describeArea(read: AreaRead, box: Box, format: 'layers' | 'list'
     palette: s.palette,
     how_to_read: `Each layer is one y level. rows[0] is z=${box.min[2]}, the last is z=${box.max[2]}. Each row runs from x=${box.min[0]} to x=${box.max[0]} as palette indices; "3*5" means index 3 five times.`,
     layers,
+  };
+}
+
+/** Fields every entity has that say little about it; left out of the short form. */
+const NOISE = new Set([
+  'Pos', 'UUID', 'Motion', 'Rotation', 'id', 'Brain', 'Air', 'Fire', 'fall_distance', 'FallDistance', 'OnGround', 'PortalCooldown',
+  'Invulnerable', 'HurtTime', 'HurtByTimestamp', 'DeathTime', 'AbsorptionAmount', 'FallFlying', 'attributes', 'Attributes',
+  'LeftHanded', 'CanPickUpLoot', 'PersistenceRequired', 'ForcedAge', 'InLove', 'Age',
+]);
+
+const round = (v: number) => Math.round(v * 1000) / 1000;
+
+export function describeEntities(list: WorldEntity[], box: Box, full: boolean) {
+  return {
+    from: box.min,
+    to: box.max,
+    count: list.length,
+    entities: list.map((e) => {
+      const rot = e.data.value.get('Rotation');
+      const name = e.data.value.get('CustomName');
+      const leash = e.data.value.get('leash') ?? e.data.value.get('Leash');
+      const shown = full ? e.data : nbt.compound(new Map([...e.data.value].filter(([k]) => !NOISE.has(k))));
+      let text: string;
+      try {
+        text = toSnbt(shown);
+      } catch {
+        text = '(data has text that cannot be shown as SNBT)';
+      }
+      return {
+        id: e.id,
+        pos: e.pos.map(round),
+        ...(rot?.type === 'list' ? { rotation: rot.value.map((t) => (t.type === 'float' ? round(t.value) : 0)) } : {}),
+        uuid: e.uuid ? uuidString(e.uuid) : null,
+        ...(name ? { name: name.type === 'string' ? name.value : toSnbt(name) } : {}),
+        ...(leash ? { leash: toSnbt(leash) } : {}),
+        nbt: full || text.length <= 600 ? text : `${text.slice(0, 600)}... (full: true for all of it)`,
+      };
+    }),
   };
 }

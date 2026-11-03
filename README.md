@@ -51,12 +51,14 @@ real server.
 - Runs any server command, including commands from mods and datapacks.
 - Places, fills, copies and clears blocks, packed into as few commands as possible.
 - Reads the blocks in an area, with their full states and block data, so the agent can check and
-  fix its work.
+  fix its work. Lists the entities in an area too.
 - Reads and writes files inside the server folder: datapacks, configs and, if you allow it, mods.
 - Imports a `.schem` file (Sponge schematic version 2 or 3, as WorldEdit saves) into the world, and
-  exports an area to `.schem`.
-- Saves the area before each change so the last change can be undone, and backs up the whole world
-  on request.
+  exports an area to `.schem`, entities included: item frames with their item and rotation,
+  paintings, armor stands with gear and pose, mobs with their data, minecarts and boats. Copies get
+  new UUIDs, leads stay tied (to a fence or to another mob) and riders stay seated.
+- Saves the area, entities included, before each change so the last change can be undone, and backs
+  up the whole world on request.
 
 ## How it works
 
@@ -70,8 +72,9 @@ real server.
   your computer can join. It runs in the background and keeps running between agent sessions.
 - **RCON.** Minecraft's built-in remote console. The tool turns it on with a random password stored
   in the server's `server.properties`, and only connects to 127.0.0.1. Block changes are sent as
-  commands over RCON. To read blocks, the tool asks the server to save (`save-all flush`) and then
-  reads the saved region files directly. It never writes to them.
+  commands over RCON. To read blocks and entities, the tool asks the server to save (`save-all flush`)
+  and then reads the saved region and entity files directly. It never writes to them. Entities are
+  placed with `/summon` after the blocks, so frames and paintings have a wall to hang on.
 - **Add-on (later).** An optional server mod for NeoForge that will make reading, import and export
   fast for big maps. It is not available yet; everything above works without it.
 
@@ -129,11 +132,12 @@ the skill after asking you, and walks you through making the test server.
 | `place_blocks` | Places up to 10000 single blocks, packed into fills; supports block data | Changes things |
 | `fill_blocks` | Fills boxes, also hollow, outline, keep or replace-only | Changes things |
 | `copy_blocks` | Copies a box to another place | Changes things |
-| `clear_blocks` | Sets a box to air | Changes things |
+| `clear_blocks` | Sets a box to air and removes its entities (without drops) | Changes things |
 | `read_blocks` | Returns the blocks in a box with full states and block entity ids | Read-only |
-| `undo` | Puts back the area changed by the last block change | Changes things |
-| `import_schematic` | Pastes a `.schem` (v2 or v3) from the server folder into the world | Changes things |
-| `export_schematic` | Saves a box as a `.schem` (v3 or v2) in the server folder | Changes things (writes a file) |
+| `read_entities` | Lists the entities in a box with position, rotation, UUID, name, lead and data | Read-only |
+| `undo` | Puts back the area changed by the last change, blocks and entities | Changes things |
+| `import_schematic` | Pastes a `.schem` (v2 or v3) from the server folder into the world, entities included | Changes things |
+| `export_schematic` | Saves a box as a `.schem` (v3 or v2) in the server folder, entities included | Changes things (writes a file) |
 | `backup_world` | Copies the whole world into the server's backup folder | Changes things (adds a backup) |
 | `restore_world` | Replaces the world with a backup; the current world is kept as a backup | Changes things |
 | `list_files` | Lists files in the server folder | Read-only |
@@ -165,6 +169,10 @@ The safety rules are in the tool itself, not in agent settings, so they hold for
 - **Undo and backups.** Each block change saves the area first. Areas too big for that are refused
   unless the agent ran `backup_world` and says so. The tool has no command to delete a world, and
   restoring a backup keeps the current world as another backup.
+- **Entities.** Players are never copied, summoned or removed. Entity ids are checked before they go
+  into a command, entity data goes through the tool's own NBT and SNBT code, every copy gets a new
+  UUID, and the number of entities per call is limited (`maxEntities`). Entities are removed without
+  loot, and items that drop anyway during a clear are removed too.
 - **Size limits and clear errors.** Every change, read, import and file has a size limit. When a
   limit or rule stops something, the error says which one and how to change it.
 - **What the tool cannot stop.** Your agent may have other tools, such as a shell, that are not
@@ -189,6 +197,8 @@ its default. Restart your agent after changing it.
 | `maxReadBlocks` | `32768` | Most blocks one `read_blocks` call may read (for example 32 x 32 x 32). |
 | `maxImportBlocks` | `500000` | Most blocks in one imported or exported schematic, and in one undo snapshot. |
 | `maxFileBytes` | `10485760` | Largest file `read_file` and `write_file` handle (10 MB). |
+| `maxEntities` | `256` | Most entities one export, import, clear, undo snapshot or `read_entities` call may handle. |
+| `includeEntities` | `true` | Export, import, clear and undo snapshots include entities. `false` makes them blocks only; each call can also set `include_entities`. |
 | `allowFileWrites` | `true` | `false` turns off `write_file` and `export_schematic`. |
 | `allowModInstall` | `false` | `true` lets `write_file` add or change mods (`.jar` files and the `mods` folder). |
 | `confirmDestructive` | `true` | `clear_blocks`, `import_schematic`, `undo`, `restore_world` and replacing an existing file need `confirm: true`, which the agent sets only after asking you. |
@@ -206,7 +216,16 @@ its default. Restart your agent after changing it.
   The unit tests are set up to run on Windows, macOS and Linux. Other MCP agents are not tested yet.
 - The add-on for fast reading, import and export is not available yet. Until then big imports go
   command by command over RCON, and reads are limited per call.
-- Entities (mobs, item frames, armor stands, paintings) are not imported or exported yet.
+- Entities: players are never copied or removed. An entity counts as inside an area when its position
+  is. Entity data longer than RCON allows is split over several commands; a single field that is
+  still too long is left out, and the reply says which. Villager memories (job site, home) are not
+  copied; villagers find new ones. Lead knots are not saved by the game; they are made again from
+  the mob's lead.
+- With nobody online, Minecraft 1.21.2 and newer pauses the server (`pause-when-empty-seconds` in
+  `server.properties`): mobs, leads and redstone wait until someone joins. Commands and building
+  work either way.
+- `copy_blocks` copies blocks only, not entities; export and import an area to copy it with its
+  entities.
 - Block data longer than RCON allows (about 1400 bytes, for example a very full chest) is placed
   without its data, and the reply says where.
 - One call can load at most 1024 chunks. Worlds saved with LZ4 chunk compression are not read.

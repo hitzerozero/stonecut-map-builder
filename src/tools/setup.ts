@@ -50,6 +50,8 @@ export const setupTools = [
         maxReadBlocks: c.maxReadBlocks,
         maxImportBlocks: c.maxImportBlocks,
         maxFileBytes: c.maxFileBytes,
+        maxEntities: c.maxEntities,
+        includeEntities: c.includeEntities,
         allowFileWrites: c.allowFileWrites,
         allowModInstall: c.allowModInstall,
         confirmDestructive: c.confirmDestructive,

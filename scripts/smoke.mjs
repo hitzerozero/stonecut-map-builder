@@ -22,7 +22,7 @@ const { tools } = await client.listTools();
 const missing = tools.filter((t) => typeof t.annotations?.readOnlyHint !== 'boolean' || typeof t.annotations?.destructiveHint !== 'boolean');
 const status = await client.callTool({ name: 'status', arguments: {} });
 await client.close();
-if (tools.length !== 23 || missing.length || status.isError) {
+if (tools.length !== 24 || missing.length || status.isError) {
   console.error(`Smoke test failed: ${tools.length} tools, ${missing.length} without annotations, status error: ${!!status.isError}`);
   process.exit(1);
 }

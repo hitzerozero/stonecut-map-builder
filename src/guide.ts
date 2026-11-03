@@ -14,6 +14,7 @@ Building:
 - place_blocks, fill_blocks, copy_blocks and clear_blocks snapshot the area first; undo puts the last change back.
 - run_command runs any server command, including mod and datapack commands.
 - Files: list_files, read_file and write_file work inside the server folder only (datapacks, configs, mods if allowed).
-- import_schematic and export_schematic read and write .schem files inside the server folder.
+- import_schematic and export_schematic read and write .schem files inside the server folder, entities included (fresh UUIDs, leads and riders kept).
+- read_entities lists the entities in an area. Summon entities after the blocks they hang on or stand on.
 
 Some tools need confirm: true. Ask the person before you set it.`;

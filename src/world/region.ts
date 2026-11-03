@@ -16,9 +16,9 @@ export class RegionError extends Error {}
 
 export type Dimension = 'overworld' | 'the_nether' | 'the_end';
 
-export function regionDir(worldDir: string, dimension: Dimension): string {
-  const legacy = { overworld: 'region', the_nether: join('DIM-1', 'region'), the_end: join('DIM1', 'region') }[dimension];
-  const candidates = [join(worldDir, legacy), join(worldDir, 'dimensions', 'minecraft', dimension, 'region')];
+export function regionDir(worldDir: string, dimension: Dimension, kind: 'region' | 'entities' = 'region'): string {
+  const legacy = { overworld: kind, the_nether: join('DIM-1', kind), the_end: join('DIM1', kind) }[dimension];
+  const candidates = [join(worldDir, legacy), join(worldDir, 'dimensions', 'minecraft', dimension, kind)];
   return candidates.find((c) => existsSync(c)) ?? candidates[0]!;
 }
 
@@ -74,7 +74,7 @@ function decompress(kind: number, bytes: Buffer): Buffer {
   throw new RegionError(`Unknown chunk compression ${kind}`);
 }
 
-async function readChunk(dir: string, regions: Map<string, Buffer | null>, cx: number, cz: number): Promise<Compound | null> {
+export async function readChunk(dir: string, regions: Map<string, Buffer | null>, cx: number, cz: number): Promise<Compound | null> {
   const rx = Math.floor(cx / 32);
   const rz = Math.floor(cz / 32);
   const key = `${rx}.${rz}`;

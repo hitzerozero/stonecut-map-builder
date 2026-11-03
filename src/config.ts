@@ -26,6 +26,8 @@ export const DEFAULTS = {
   maxReadBlocks: 32_768,
   maxImportBlocks: 500_000,
   maxFileBytes: 10 * 1024 * 1024,
+  maxEntities: 256,
+  includeEntities: true,
   allowFileWrites: true,
   allowModInstall: false,
   confirmDestructive: true,
@@ -41,6 +43,8 @@ export const configSchema = z.strictObject({
   maxReadBlocks: z.number().int().min(1).max(1_000_000).default(DEFAULTS.maxReadBlocks),
   maxImportBlocks: z.number().int().min(1).max(20_000_000).default(DEFAULTS.maxImportBlocks),
   maxFileBytes: z.number().int().min(1).max(512 * 1024 * 1024).default(DEFAULTS.maxFileBytes),
+  maxEntities: z.number().int().min(0).max(10_000).default(DEFAULTS.maxEntities),
+  includeEntities: z.boolean().default(DEFAULTS.includeEntities),
   allowFileWrites: z.boolean().default(DEFAULTS.allowFileWrites),
   allowModInstall: z.boolean().default(DEFAULTS.allowModInstall),
   confirmDestructive: z.boolean().default(DEFAULTS.confirmDestructive),
@@ -65,6 +69,8 @@ export interface Config {
   maxReadBlocks: number;
   maxImportBlocks: number;
   maxFileBytes: number;
+  maxEntities: number;
+  includeEntities: boolean;
   allowFileWrites: boolean;
   allowModInstall: boolean;
   confirmDestructive: boolean;
@@ -114,6 +120,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, home: string = 
     maxReadBlocks: c.maxReadBlocks,
     maxImportBlocks: c.maxImportBlocks,
     maxFileBytes: c.maxFileBytes,
+    maxEntities: c.maxEntities,
+    includeEntities: c.includeEntities,
     allowFileWrites: c.allowFileWrites,
     allowModInstall: c.allowModInstall,
     confirmDestructive: c.confirmDestructive,
@@ -133,6 +141,8 @@ export function exampleConfig(): Record<string, unknown> {
     maxReadBlocks: DEFAULTS.maxReadBlocks,
     maxImportBlocks: DEFAULTS.maxImportBlocks,
     maxFileBytes: DEFAULTS.maxFileBytes,
+    maxEntities: DEFAULTS.maxEntities,
+    includeEntities: DEFAULTS.includeEntities,
     allowFileWrites: DEFAULTS.allowFileWrites,
     allowModInstall: DEFAULTS.allowModInstall,
     confirmDestructive: DEFAULTS.confirmDestructive,

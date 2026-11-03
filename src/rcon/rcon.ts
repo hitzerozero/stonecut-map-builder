@@ -178,7 +178,7 @@ export type ReplyKind = 'ok' | 'unchanged' | 'error';
 
 const UNCHANGED = /^(Could not set the block|No blocks were (filled|cloned)|Nothing changed)/i;
 const ERROR =
-  /(Unknown or incomplete command|Unknown block|Unknown command|Incorrect argument|Expected |Invalid |<--\[HERE\]|not loaded|out of (this|the) world|Too many blocks|Cannot |Can't |Could not |Unknown |is not a valid)/i;
+  /(Unknown or incomplete command|Unknown block|Unknown command|Incorrect argument|Expected |Invalid |<--\[HERE\]|not loaded|out of (this|the) world|Too many blocks|Cannot |Can't |Could not |Unknown |is not a valid|Unable to |No entity was found)/i;
 
 export function classifyReply(reply: string): ReplyKind {
   const r = reply.trim();

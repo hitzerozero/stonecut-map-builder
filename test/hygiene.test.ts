@@ -52,7 +52,9 @@ function rules(): { name: string; re: RegExp }[] {
   const name = userInfo().username;
   if (name.length >= 3 && !GENERIC_USERS.has(name.toLowerCase())) identity.push(name);
   for (const t of (process.env.HYGIENE_EXTRA_TERMS ?? '').split(',')) identity.push(t.trim());
-  for (const term of identity.filter((t) => t.length >= 3)) r.push({ name: 'local identity or extra term', re: new RegExp(`(?<![A-Za-z0-9])${escape(term)}(?![A-Za-z0-9])`, 'i') });
+  // The project's own public account (the owner in the origin remote URL) may appear, for example in the clone URL.
+  const owner = /github\.com[/:]([^/]+)\//i.exec(git('remote.origin.url'))?.[1]?.toLowerCase();
+  for (const term of identity.filter((t) => t.length >= 3 && t.toLowerCase() !== owner)) r.push({ name: 'local identity or extra term', re: new RegExp(`(?<![A-Za-z0-9])${escape(term)}(?![A-Za-z0-9])`, 'i') });
   return r;
 }
 

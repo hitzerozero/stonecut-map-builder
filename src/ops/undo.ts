@@ -13,6 +13,8 @@ export interface UndoEntry {
   dimension: Dimension;
   time: string;
   blocks: number;
+  /** The snapshot holds the entities of the area too. */
+  entities?: boolean;
 }
 
 export class UndoStore {

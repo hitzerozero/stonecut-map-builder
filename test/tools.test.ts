@@ -3,10 +3,10 @@ import { call, callError, connect, text } from './helpers/mcp.js';
 
 const TOOLS = [
   'accept_eula', 'backup_world', 'clear_blocks', 'copy_blocks', 'create_server', 'export_schematic', 'fill_blocks', 'import_schematic',
-  'list_files', 'place_blocks', 'plan_setup', 'read_blocks', 'read_file', 'restart_server', 'restore_world', 'run_command',
+  'list_files', 'place_blocks', 'plan_setup', 'read_blocks', 'read_entities', 'read_file', 'restart_server', 'restore_world', 'run_command',
   'server_logs', 'start_server', 'status', 'stop_server', 'undo', 'use_server', 'write_file',
 ];
-const READ_ONLY = ['list_files', 'plan_setup', 'read_blocks', 'read_file', 'server_logs', 'status'];
+const READ_ONLY = ['list_files', 'plan_setup', 'read_blocks', 'read_entities', 'read_file', 'server_logs', 'status'];
 const DESTRUCTIVE = ['clear_blocks', 'copy_blocks', 'export_schematic', 'fill_blocks', 'import_schematic', 'place_blocks', 'restore_world', 'run_command', 'undo', 'write_file'];
 const NOT_IDEMPOTENT = ['backup_world', 'create_server', 'restart_server', 'restore_world', 'run_command', 'undo'];
 
@@ -82,4 +82,13 @@ it('will not start a server whose EULA the person has not accepted', async () =>
 it('refuses use_server outside the allowed folders', async () => {
   const { client } = await connect();
   expect(await callError(client, 'use_server', { folder: process.cwd() })).toMatch(/not inside an allowed server folder/);
+});
+
+it('lets import, export and clear turn entities on or off per call', async () => {
+  const { client } = await connect();
+  const { tools } = await client.listTools();
+  for (const name of ['import_schematic', 'export_schematic', 'clear_blocks']) {
+    const props = (tools.find((t) => t.name === name)!.inputSchema as { properties: Record<string, { type?: string }> }).properties;
+    expect(props.include_entities?.type, name).toBe('boolean');
+  }
 });

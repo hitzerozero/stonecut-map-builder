@@ -1,9 +1,8 @@
 import { z } from 'zod';
-import { AIR } from '../world/region.js';
 import { checkBlockFilter, checkBlockState, checkSnbt } from '../mc/blocks.js';
 import { boxVolume, makeBox, type Vec3 } from '../mc/box.js';
-import { describeArea } from '../ops/readout.js';
-import { blockFilter, blockState, confirm, dimension, skipBackup, snbt, vec3 } from '../schemas.js';
+import { describeArea, describeEntities } from '../ops/readout.js';
+import { blockFilter, blockState, confirm, dimension, includeEntities, skipBackup, snbt, vec3 } from '../schemas.js';
 import { tool } from './define.js';
 
 const area = { from: vec3.describe('One corner [x, y, z]'), to: vec3.describe('The opposite corner [x, y, z], inclusive') };
@@ -86,13 +85,35 @@ export const blockTools = [
   tool({
     name: 'clear_blocks',
     title: 'Clear an area to air',
-    description: 'Sets every block in the box to air (containers are emptied, nothing drops). Snapshots the area first for undo.',
-    input: { ...area, dimension, confirm, skip_backup: skipBackup },
+    description:
+      'Sets every block in the box to air (containers are emptied, nothing drops). With include_entities (default on) it also removes the entities in the box first, without drops; players are never touched. Snapshots the area, entities included, for undo.',
+    input: { ...area, include_entities: includeEntities, dimension, confirm, skip_backup: skipBackup },
     readOnly: false,
     destructive: true,
     idempotent: true,
     needsOk: (a) => `clear ${boxVolume(makeBox(a.from, a.to))} blocks from ${a.from.join(' ')} to ${a.to.join(' ')}`,
-    run: async (a, ctx) => ctx.world().fill([{ box: makeBox(a.from, a.to), state: AIR }], { dimension: a.dimension, ...(a.skip_backup ? { skipBackup: true } : {}) }, 'clear'),
+    run: async (a, ctx) =>
+      ctx.world().clear(makeBox(a.from, a.to), { dimension: a.dimension, ...(a.skip_backup ? { skipBackup: true } : {}) }, a.include_entities ?? ctx.config.includeEntities),
+  }),
+  tool({
+    name: 'read_entities',
+    title: 'List the entities in an area',
+    description:
+      'Lists the entities whose position is inside the box: item frames, paintings, armor stands, mobs, minecarts, boats, items. For each: id, position, rotation, UUID, custom name, what it is tied to (lead) and its data as SNBT (shortened unless full: true). Players are not listed. The server saves first and the tool reads the saved entity files, so it changes nothing. Limited to maxEntities.',
+    input: {
+      ...area,
+      full: z.boolean().optional().describe('Give each entity its complete data. Default false (common fields only, shortened).'),
+      dimension,
+    },
+    readOnly: true,
+    destructive: false,
+    idempotent: true,
+    run: async (a, ctx) => {
+      const box = makeBox(a.from, a.to);
+      const list = await ctx.world().entitiesIn(box, a.dimension);
+      ctx.world().checkEntities(list.length, 'The area has');
+      return describeEntities(list, box, a.full ?? false);
+    },
   }),
   tool({
     name: 'read_blocks',
@@ -119,7 +140,8 @@ export const blockTools = [
   tool({
     name: 'undo',
     title: 'Undo the last change',
-    description: 'Puts back the area changed by the most recent block change (place, fill, copy, clear, import, or run_command with backup_area), from the snapshot taken before it. Call again to go further back; status lists what can be undone.',
+    description:
+      'Puts back the area changed by the most recent change (place, fill, copy, clear, import, or run_command with backup_area), from the snapshot taken before it: blocks, and entities when the snapshot has them (entities added since are removed, removed ones are summoned again). Call again to go further back; status lists what can be undone.',
     input: { confirm },
     readOnly: false,
     destructive: true,

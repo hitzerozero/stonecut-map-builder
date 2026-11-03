@@ -15,6 +15,14 @@ export interface BlockEntity {
   data: Compound;
 }
 
+export interface SchematicEntity {
+  /** Position relative to the schematic's 0,0,0 corner, in blocks (not whole numbers). */
+  pos: Vec3;
+  id: string;
+  /** The entity's data as the game saved it (positions in it are world positions at export). */
+  data: Compound;
+}
+
 export interface Schematic {
   width: number;
   height: number;
@@ -24,6 +32,9 @@ export interface Schematic {
   palette: string[];
   blocks: Uint32Array;
   blockEntities: BlockEntity[];
+  entities?: SchematicEntity[];
+  /** World position of the 0,0,0 corner when the area was exported, if known. */
+  origin?: Vec3;
 }
 
 export type SpongeVersion = 2 | 3;
@@ -126,6 +137,8 @@ function readBlockEntities(list: Tag | undefined, version: number, size: Vec3): 
 export interface ReadOptions {
   /** Refuse schematics with more blocks (width * height * length) than this. */
   maxBlocks?: number;
+  /** Refuse schematics with more entities than this. */
+  maxEntities?: number;
 }
 
 export function readSponge(file: Buffer, options: ReadOptions = {}): { schematic: Schematic; version: SpongeVersion } {
@@ -175,11 +188,42 @@ export function readSponge(file: Buffer, options: ReadOptions = {}): { schematic
     if (palette[blocks[i]!] === undefined) throw new SchematicError(`Block ${i} uses palette index ${blocks[i]} that is not in the palette`);
   }
   const blockEntities = readBlockEntities(entitiesTag, version, [width, height, length]);
+  const entities = readEntities(root.value.get('Entities'), version, options.maxEntities);
+  const meta = get(root, 'Metadata', 'compound');
+  const originTag = meta ? get(get(meta, 'Stonecut', 'compound') ?? nbt.compound({}), 'Origin', 'intArray') : undefined;
+  const origin: Vec3 | undefined = originTag && originTag.value.length === 3 ? [originTag.value[0]!, originTag.value[1]!, originTag.value[2]!] : undefined;
   return {
-    schematic: { width, height, length, offset, dataVersion, palette, blocks, blockEntities },
+    schematic: { width, height, length, offset, dataVersion, palette, blocks, blockEntities, entities, ...(origin ? { origin } : {}) },
     version: version === 3 ? 3 : 2,
   };
 }
+
+function readEntityPos(c: Compound): Vec3 | null {
+  const p = c.value.get('Pos');
+  if (!p || p.type !== 'list' || p.value.length !== 3) return null;
+  const v = p.value.map((t) => (t.type === 'double' || t.type === 'float' || t.type === 'int' ? t.value : NaN));
+  return v.every(Number.isFinite) ? [v[0]!, v[1]!, v[2]!] : null;
+}
+
+function readEntities(list: Tag | undefined, version: number, max?: number): SchematicEntity[] {
+  if (!list || list.type !== 'list') return [];
+  if (max !== undefined && list.value.length > max) throw new SchematicError(`Schematic has ${list.value.length} entities, over the limit of ${max}`);
+  const out: SchematicEntity[] = [];
+  for (const t of list.value) {
+    if (t.type !== 'compound') continue;
+    const pos = readEntityPos(t);
+    const id = get(t, 'Id', 'string')?.value ?? get(t, 'id', 'string')?.value;
+    if (!pos || !id) throw new SchematicError('Entity without Pos or Id');
+    const nested = get(t, 'Data', 'compound');
+    const data = nbt.compound(new Map(version >= 3 && nested ? nested.value : t.value));
+    if (!(version >= 3 && nested)) for (const k of ['Pos', 'Id']) data.value.delete(k);
+    data.value.delete('id');
+    out.push({ pos, id, data });
+  }
+  return out;
+}
+
+const posList = (v: Vec3): Tag => nbt.list('double', v.map((x) => nbt.double(x)));
 
 // ---- writing ----
 
@@ -214,7 +258,10 @@ export function writeSponge(input: Schematic, version: SpongeVersion = 3): Buffe
   const common: [string, Tag][] = [
     ['Version', nbt.int(version)],
     ['DataVersion', nbt.int(s.dataVersion)],
-    ['Metadata', nbt.compound({ Date: nbt.long(BigInt(Date.now())) })],
+    [
+      'Metadata',
+      nbt.compound({ Date: nbt.long(BigInt(Date.now())), ...(s.origin ? { Stonecut: nbt.compound({ Origin: nbt.intArray(s.origin) }) } : {}) }),
+    ],
     ['Width', u16(s.width)],
     ['Height', u16(s.height)],
     ['Length', u16(s.length)],
@@ -231,6 +278,12 @@ export function writeSponge(input: Schematic, version: SpongeVersion = 3): Buffe
         ['Palette', palette],
         ['BlockData', data],
         ['BlockEntities', nbt.list('compound', entities)],
+        // Version 2 keeps entity data flat next to Pos and Id, so the world position inside the data is left out.
+        ['Entities', nbt.list('compound', (s.entities ?? []).map((e) => nbt.compound(new Map<string, Tag>([
+          ...[...e.data.value].filter(([k]) => k !== 'Pos' && k !== 'Id' && k !== 'id'),
+          ['Pos', posList(e.pos)],
+          ['Id', nbt.string(e.id)],
+        ]))))],
       ]),
     );
     return gzipSync(writeNbt('Schematic', root));
@@ -239,6 +292,7 @@ export function writeSponge(input: Schematic, version: SpongeVersion = 3): Buffe
     nbt.compound({ Pos: nbt.intArray(be.pos), Id: nbt.string(be.id), Data: be.data }),
   );
   const blocks = nbt.compound({ Palette: palette, Data: data, BlockEntities: nbt.list('compound', entities) });
-  const inner = nbt.compound(new Map<string, Tag>([...common, ['Blocks', blocks]]));
+  const mobs = (s.entities ?? []).map((e) => nbt.compound({ Pos: posList(e.pos), Id: nbt.string(e.id), Data: e.data }));
+  const inner = nbt.compound(new Map<string, Tag>([...common, ['Blocks', blocks], ['Entities', nbt.list('compound', mobs)]]));
   return gzipSync(writeNbt('', nbt.compound({ Schematic: inner })));
 }

@@ -62,3 +62,8 @@ export const command = z
   .max(MAX_COMMAND_BYTES)
   .refine((c) => !/[\r\n\0]/.test(c), 'One command, on one line')
   .describe('A server command without the leading slash, for example "time set day"');
+
+export const includeEntities = z
+  .boolean()
+  .optional()
+  .describe('Include entities (item frames, paintings, armor stands, mobs, minecarts, boats). Default: includeEntities in the config (on).');
