@@ -38,7 +38,7 @@ export function listFiles(server: TestServer, rel: string, depth: number, max = 
     for (const d of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (entries.length >= max) return;
       const full = join(dir, d.name);
-      if (dir === server.dir && d.name === STATE_DIR) continue;
+      if (dir === server.dir && d.name.toLowerCase() === STATE_DIR) continue;
       const st = lstatSync(full);
       if (st.isSymbolicLink()) entries.push({ path: shown(server.dir, full), type: 'link' });
       else if (st.isDirectory()) {

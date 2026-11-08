@@ -36,9 +36,18 @@ it('refuses paths outside the server folder, through .. or links', async () => {
   expect(existsSync(join(outside, 'new.txt'))).toBe(false);
 });
 
+it("hides a case-folded copy of the tool's own folder from listings", async () => {
+  const { client, serverDir } = await connect();
+  mkdirSync(join(serverDir, '.STONECUT'), { recursive: true });
+  writeFileSync(join(serverDir, '.STONECUT', 'x.txt'), 'x');
+  const list = JSON.parse(text(await call(client, 'list_files', { path: '.', depth: 4 })));
+  expect(list.entries.some((e: { path: string }) => e.path.toLowerCase().startsWith('.stonecut'))).toBe(false);
+});
+
 it("protects the tool's state, eula.txt and the world's chunk files", async () => {
   const { client } = await connect();
   expect(await callError(client, 'read_file', { path: '.stonecut/server.json' })).toMatch(/tool's own folder/);
+  expect(await callError(client, 'read_file', { path: '.STONECUT/server.json' })).toMatch(/tool's own folder/);
   expect(await callError(client, 'write_file', { path: 'eula.txt', content: 'eula=true', overwrite: true, confirm: true })).toMatch(/accept_eula/);
   expect(await callError(client, 'write_file', { path: 'world/region/r.0.0.mca', content: 'x' })).toMatch(/chunk files/);
   expect(await callError(client, 'write_file', { path: 'world/level.dat', content: 'x' })).toMatch(/part of the world/);

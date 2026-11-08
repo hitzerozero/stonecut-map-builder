@@ -11,6 +11,11 @@ export class PathError extends Error {}
 const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$)(\..*)?$/i;
 const caseInsensitive = process.platform === 'win32' || process.platform === 'darwin';
 
+// Hidden folders ignore letter case on every system: Linux folders can be case-folded too.
+function fold(p: string): string {
+  return p.toLowerCase();
+}
+
 function norm(p: string): string {
   return caseInsensitive ? p.toLowerCase() : p;
 }
@@ -67,8 +72,8 @@ export function resolveInside(root: string, userPath: string, options: ResolveOp
     if (WINDOWS_DEVICE.test(part)) throw new PathError(`"${part}" is a reserved name on Windows`);
     if (/[. ]$/.test(part)) throw new PathError(`Path parts may not end with a dot or space: ${part}`);
   }
-  const hidden = (options.hidden ?? []).map((h) => norm(h));
-  if (hidden.includes(norm(parts[0]!))) throw new PathError(`${parts[0]} is the tool's own folder and cannot be read or changed`);
+  const hidden = (options.hidden ?? []).map(fold);
+  if (hidden.includes(fold(parts[0]!))) throw new PathError(`${parts[0]} is the tool's own folder and cannot be read or changed`);
 
   const rootReal = realOrSelf(resolve(root));
   const target = resolve(rootReal, ...parts);
@@ -76,7 +81,7 @@ export function resolveInside(root: string, userPath: string, options: ResolveOp
   const real = realDeepest(target);
   if (!isInside(rootReal, real)) throw new PathError(`Path leads outside the server folder through a link: ${userPath}`);
   const first = relative(rootReal, real).split(sep)[0] ?? '';
-  if (first !== '' && hidden.includes(norm(first))) throw new PathError(`${userPath} leads into the tool's own folder, which cannot be read or changed`);
+  if (first !== '' && hidden.includes(fold(first))) throw new PathError(`${userPath} leads into the tool's own folder, which cannot be read or changed`);
   return real;
 }
 

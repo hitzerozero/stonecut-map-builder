@@ -35,10 +35,10 @@ it('refuses Windows device names, streams, trailing dots and empty paths', () =>
   }
 });
 
-it("keeps the tool's own folder hidden, in any letter case on Windows and macOS", () => {
+it("keeps the tool's own folder hidden, in any letter case", () => {
   const root = tempDir('paths');
-  expect(() => resolveInside(root, '.stonecut/server.json', { hidden: ['.stonecut'] })).toThrow(/tool's own folder/);
-  if (process.platform !== 'linux') expect(() => resolveInside(root, '.STONECUT/x', { hidden: ['.stonecut'] })).toThrow(/tool's own folder/);
+  expect(() => resolveInside(root, '.stonecut/server.json', { hidden: ['.stonecut'] })).toThrow(/ is the tool's own folder/);
+  expect(() => resolveInside(root, '.STONECUT/x', { hidden: ['.stonecut'] })).toThrow(/ is the tool's own folder/);
   expect(resolveInside(root, 'world/.stonecut', { hidden: ['.stonecut'] })).toContain('world');
 });
 
