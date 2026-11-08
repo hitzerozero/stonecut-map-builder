@@ -4,6 +4,14 @@
   "description": "MCP server and skill that let a coding agent build Minecraft maps on a private test server on your own computer.",
   "license": "MIT",
   "author": "Stonecut Studio",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hitzerozero/stonecut-map-builder.git"
+  },
+  "homepage": "https://stonecut.studio/resources",
+  "bugs": {
+    "url": "https://github.com/hitzerozero/stonecut-map-builder/issues"
+  },
   "type": "module",
   "bin": {
     "stonecut-map-builder": "dist/index.js"
