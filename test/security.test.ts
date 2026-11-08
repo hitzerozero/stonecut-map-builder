@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -11,7 +11,7 @@ import { portFree, ServerError, TestServer } from '../src/mc/testserver.js';
 import { javaNeededFor, pickNeoForge } from '../src/mc/versions.js';
 import { nbt, readNbt, unpackNbt, writeNbt } from '../src/nbt/nbt.js';
 import { isCodeFile } from '../src/ops/files.js';
-import { PathError, resolveInside } from '../src/safety/paths.js';
+import { checkAllowedFolder, PathError, resolveInside } from '../src/safety/paths.js';
 import { readSponge } from '../src/schematic/sponge.js';
 import { call, callError, connect, text } from './helpers/mcp.js';
 import { tempDir } from './helpers/temp.js';
@@ -164,6 +164,22 @@ it('only runs a Java the agent names if it is called java and is not inside a se
   expect(() => checkJavaPath(config, join('bin', exe))).toThrow(/full path/);
   expect(() => checkJavaPath(config, join(base, 'jdk', 'bin', exe))).not.toThrow();
 });
+
+it('sees a path inside a server folder that does not exist yet, when the folder is reached through a link', () => {
+  const base = tempDir('linked');
+  const real = join(base, 'real');
+  mkdirSync(real);
+  symlinkSync(real, join(base, 'link'), 'junction');
+  const config = loadConfig({ STONECUT_MAP_CONFIG: join(base, 'none.json') }, join(base, 'link'));
+  const inside = join(realpathSync.native(real), relativeToHome(config.serverFolders[0]!, join(base, 'link')));
+  const exe = process.platform === 'win32' ? 'java.exe' : 'java';
+  expect(() => checkJavaPath(config, join(inside, 'test', 'bin', exe))).toThrow(/inside a server folder/);
+  expect(checkAllowedFolder(config.serverFolders, join(inside, 'world'))).toBe(join(inside, 'world'));
+});
+
+function relativeToHome(folder: string, home: string): string {
+  return folder.slice(home.length);
+}
 
 it('refuses chunk ranges that are too big before listing them', async () => {
   const { client } = await connect();

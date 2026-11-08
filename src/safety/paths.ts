@@ -65,7 +65,7 @@ export function resolveInside(root: string, userPath: string, options: ResolveOp
     throw new PathError(`Use a path relative to the server folder, not an absolute path: ${userPath}`);
   }
   const parts = cleaned.split('/').filter((s) => s !== '' && s !== '.');
-  if (parts.length === 0) return realOrSelf(resolve(root));
+  if (parts.length === 0) return realDeepest(resolve(root));
   for (const part of parts) {
     if (part === '..') throw new PathError(`".." is not allowed in paths: ${userPath}`);
     if (part.includes(':')) throw new PathError(`":" is not allowed in paths: ${userPath}`);
@@ -75,7 +75,7 @@ export function resolveInside(root: string, userPath: string, options: ResolveOp
   const hidden = (options.hidden ?? []).map(fold);
   if (hidden.includes(fold(parts[0]!))) throw new PathError(`${parts[0]} is the tool's own folder and cannot be read or changed`);
 
-  const rootReal = realOrSelf(resolve(root));
+  const rootReal = realDeepest(resolve(root));
   const target = resolve(rootReal, ...parts);
   if (!isInside(rootReal, target)) throw new PathError(`Path leaves the server folder: ${userPath}`);
   const real = realDeepest(target);
@@ -87,7 +87,7 @@ export function resolveInside(root: string, userPath: string, options: ResolveOp
 
 /** The path relative to root, with forward slashes, for showing to the agent. */
 export function shown(root: string, p: string): string {
-  return relative(realOrSelf(resolve(root)), p).split(sep).join('/');
+  return relative(realDeepest(resolve(root)), p).split(sep).join('/');
 }
 
 /**
@@ -98,7 +98,7 @@ export function checkAllowedFolder(allowed: string[], folder: string): string {
   if (!isAbsolute(folder)) throw new PathError(`Give the server folder as a full path: ${folder}`);
   const real = realDeepest(resolve(folder));
   for (const root of allowed) {
-    if (isInside(realOrSelf(resolve(root)), real)) return real;
+    if (isInside(realDeepest(resolve(root)), real)) return real;
   }
   throw new PathError(
     `${folder} is not inside an allowed server folder. Allowed: ${allowed.join(', ')}. The person can add folders under "serverFolders" in the config file.`,
