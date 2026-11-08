@@ -135,16 +135,24 @@ function readBlockEntities(list: Tag | undefined, version: number, size: Vec3): 
 }
 
 export interface ReadOptions {
-  /** Refuse schematics with more blocks (width * height * length) than this. */
+  /** Refuse schematics with more blocks (width * height * length) than this, and files too big for that many. */
   maxBlocks?: number;
   /** Refuse schematics with more entities than this. */
   maxEntities?: number;
 }
 
+/**
+ * Most bytes a schematic of maxBlocks blocks may take unpacked: room for its block data and plenty of
+ * block entities, and far less than a decompression bomb would make.
+ */
+export function schematicByteLimit(maxBlocks: number): number {
+  return 64 * 1024 * 1024 + maxBlocks * 16;
+}
+
 export function readSponge(file: Buffer, options: ReadOptions = {}): { schematic: Schematic; version: SpongeVersion } {
   let rootTag: Compound;
   try {
-    rootTag = unpackNbt(file).tag;
+    rootTag = (options.maxBlocks === undefined ? unpackNbt(file) : unpackNbt(file, schematicByteLimit(options.maxBlocks), 1_000_000 + options.maxBlocks * 4)).tag;
   } catch (e) {
     throw new SchematicError(`Not a readable schematic: ${e instanceof Error ? e.message : String(e)}`);
   }

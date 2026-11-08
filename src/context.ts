@@ -53,19 +53,24 @@ export class Context {
     return out;
   }
 
-  /** The active server, or null if there is none yet. */
-  current(): TestServer | null {
-    if (this.active) return this.active;
+  /** The server to use when none is active yet: the remembered one, else the first known one. Only reads. */
+  findServer(): TestServer | null {
     const candidates = [this.remembered(), ...this.knownServers()].filter((p): p is string => !!p && existsSync(metaPath(p)));
     for (const dir of candidates) {
       try {
-        this.setActive(checkAllowedFolder(this.config.serverFolders, dir));
-        return this.active;
+        return TestServer.open(checkAllowedFolder(this.config.serverFolders, dir));
       } catch {
         // no longer allowed or unreadable; try the next one
       }
     }
     return null;
+  }
+
+  /** The active server, or null if there is none yet. */
+  current(): TestServer | null {
+    if (this.active) return this.active;
+    const found = this.findServer();
+    return found ? this.setActive(found.dir) : null;
   }
 
   server(): TestServer {

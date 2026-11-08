@@ -15,13 +15,17 @@ Only the latest released version gets security fixes.
 
 ## What counts
 
-Anything that breaks the safety rules in the README, for example:
+Anything that breaks the safety rules in the [reference](docs/reference.md#safety), for example:
 
-- a path that reads or writes outside the test server folder;
+- a path that reads or writes outside the test server folder, or into the tool's own `.stonecut` folder;
 - RCON or the test server becoming reachable from another computer;
+- a way to run a program, or to add a mod or other code, while `allowModInstall` is off;
+- the RCON password reaching the agent;
 - a download from a source other than Mojang or NeoForged, or one used without a matching hash;
 - a tool that changes something while marked read-only;
 - a way to accept the Minecraft EULA or install something without the person's yes;
-- block names, file contents or schematic data that make the server run a command nobody asked for.
+- block names, file contents or schematic data that make the tool send a command nobody asked for.
+  Command blocks and functions inside a schematic or datapack are content the game runs, not a
+  flaw in the tool (see Limits in the reference).
 
 Problems in Minecraft, NeoForge, Java or your agent itself should go to those projects.

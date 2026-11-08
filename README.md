@@ -59,6 +59,12 @@ bigger than the tool's import limit by default; download single pieces, or raise
 
 The full rules and every setting are in the [reference](docs/reference.md#safety).
 
+## Troubleshooting
+
+Run `npx -y stonecut-map-builder doctor`. It checks Node, your settings, Java, the test server, the
+skill and whether the tool starts, and says how to fix each problem. It changes nothing. See the
+[reference](docs/reference.md#doctor).
+
 ## More
 
 - [Full reference](docs/reference.md): every tool, setting and limit, and manual install.

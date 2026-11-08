@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Config } from '../config.js';
 import {
@@ -11,11 +11,11 @@ import {
   type Placement,
   schematicPlacements,
 } from '../mc/blocks.js';
-import { type Box, boxAt, boxSize, boxVolume, chunksOf, makeBox, splitBox, unionBox, type Vec3 } from '../mc/box.js';
+import { type Box, boxAt, boxSize, boxVolume, chunkCount, chunksOf, makeBox, splitBox, unionBox, type Vec3 } from '../mc/box.js';
 import { STATE_DIR, type TestServer } from '../mc/testserver.js';
 import { type BatchResult, emptyResult, mergeResults, runInOrder, runParallel } from '../rcon/rcon.js';
 import { resolveInside, shown } from '../safety/paths.js';
-import { readSponge, writeSponge, type Schematic, type SpongeVersion } from '../schematic/sponge.js';
+import { readSponge, schematicByteLimit, writeSponge, type Schematic, type SpongeVersion } from '../schematic/sponge.js';
 import { AIR, type AreaRead, type Dimension, readArea, regionDir } from '../world/region.js';
 import { readEntities, toSchematicEntities, type WorldEntity } from '../world/entities.js';
 import { removeCommands, summonCommands, uuidString } from '../mc/entities.js';
@@ -37,6 +37,10 @@ export function inDimension(dim: Dimension, cmd: string): string {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function checkChunks(n: number): void {
+  if (n > MAX_CHUNKS) throw new WorldError(`That touches ${n} chunks; the limit is ${MAX_CHUNKS} per call. Split the work into smaller areas.`);
+}
 
 export interface ChangeResult {
   commands: number;
@@ -92,6 +96,7 @@ export class World {
 
   /** Entities in the area right now (saved first). */
   async entitiesIn(box: Box, dim: Dimension): Promise<WorldEntity[]> {
+    checkChunks(chunkCount(box));
     await this.save();
     return readEntities(regionDir(this.server.worldDir, dim, 'entities'), box);
   }
@@ -147,8 +152,12 @@ export class World {
   /** Force-loads the chunks of boxes while fn runs, then releases only the ones it added. */
   async withLoaded<T>(boxes: Box[], dim: Dimension, fn: () => Promise<T>): Promise<T> {
     const keys = new Map<string, [number, number]>();
-    for (const b of boxes) for (const c of chunksOf(b)) keys.set(`${c[0]},${c[1]}`, c);
-    if (keys.size > MAX_CHUNKS) throw new WorldError(`That touches ${keys.size} chunks; the limit is ${MAX_CHUNKS} per call. Split the work into smaller areas.`);
+    for (const b of boxes) {
+      // Counted before listing, so a huge box is refused without listing its chunks.
+      checkChunks(chunkCount(b));
+      for (const c of chunksOf(b)) keys.set(`${c[0]},${c[1]}`, c);
+    }
+    checkChunks(keys.size);
     const listed = await this.cmd(inDimension(dim, 'forceload query'));
     const already = new Set([...listed.matchAll(/\[(-?\d+), (-?\d+)\]/g)].map((m) => `${m[1]},${m[2]}`));
     const added = [...keys.entries()].filter(([k]) => !already.has(k)).map(([, c]) => c);
@@ -354,6 +363,8 @@ export class World {
   }
 
   async importFile(file: string, origin: Vec3, includeAir: boolean, opts: ChangeOptions, withEntities: boolean): Promise<ChangeResult & { size: Vec3; version: SpongeVersion; dataVersion: number }> {
+    const limit = schematicByteLimit(this.config.maxImportBlocks);
+    if (statSync(file).size > limit) throw new WorldError(`${shown(this.server.dir, file)} is over ${limit} bytes, too big for a schematic within maxImportBlocks (${this.config.maxImportBlocks}).`);
     const { schematic, version } = readSponge(readFileSync(file), { maxBlocks: this.config.maxImportBlocks, ...(withEntities ? { maxEntities: this.config.maxEntities } : {}) });
     const r = await this.paste(schematic, origin, includeAir, opts, `import ${shown(this.server.dir, file)}`, true, withEntities ? 'replace' : 'none');
     return { ...r, size: [schematic.width, schematic.height, schematic.length], version, dataVersion: schematic.dataVersion };

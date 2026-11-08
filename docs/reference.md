@@ -75,6 +75,29 @@ the skill after asking you, and walks you through making the test server.
 4. Optional: `npx -y stonecut-map-builder --init-config` writes the settings file with every
    setting at its default, and `--config-path` prints where it is. See [Safety](#safety).
 5. In your agent, ask it to call `status`, then to set up a test server.
+6. If something does not work, run `npx -y stonecut-map-builder doctor` (see [Doctor](#doctor)).
+
+## Doctor
+
+    npx -y stonecut-map-builder doctor
+
+From a source checkout: `node dist/index.js doctor`. Each line says PASS or FAIL, and each FAIL says
+what to do. It exits with 0 when everything passes and 1 otherwise. It checks:
+
+- the Node.js version (20 or newer);
+- the settings file: found, valid or broken (and what is wrong), or missing (defaults in use), the
+  allowed server folders, and whether file writes and mods are allowed;
+- Java: every Java it finds and which Minecraft versions it is enough for (Java 17 for 1.20.1 to
+  1.20.4, Java 21 for 1.20.5 to 1.21.11, Java 25 for 26.1 and newer), and `javaPath` if you set it;
+- the active test server: its folder, Minecraft version and loader, the EULA, its Java, and whether it
+  is running (and listening on 127.0.0.1 only) or stopped with its game and RCON ports free;
+- the map-builder skill in `~/.claude/skills/map-builder` (or `$CLAUDE_CONFIG_DIR/skills`) and in
+  `.claude/skills/map-builder` of the folder you run it from, and whether it matches this version;
+- whether the MCP server starts and lists all its tools.
+
+It changes nothing and contacts nothing outside your computer. To check, it runs `java -version` for
+each Java it finds, asks the test server over RCON on 127.0.0.1 whether it runs, listens on
+127.0.0.1 for a moment to see whether the ports are free, and starts the MCP server once.
 
 ## The tools
 
@@ -115,12 +138,22 @@ The safety rules are in the tool itself, not in agent settings, so they hold for
 - **This computer only.** The test server listens on 127.0.0.1. RCON listens on 127.0.0.1 and the
   tool only connects to 127.0.0.1. Before every start the tool puts back `server-ip=127.0.0.1`, RCON
   on, its RCON port and password, the query port off and RCON output to players off, even if a file
-  edit changed them. There is no setting to connect to another computer.
+  edit changed them. If the management server of Minecraft 1.21.9 and newer is set up, its address
+  is put back to 127.0.0.1 too. `server.properties` is read the way Java reads it, so a key written
+  twice, with escapes or over two lines cannot slip past. To see whether a port is free the tool
+  listens on 127.0.0.1 only. There is no setting to connect to another computer.
 - **Allowed folders only.** Servers can only be made or used inside the allowed server folders.
   File tools work inside the active server's folder only. Absolute paths, `..`, Windows device
-  names and paths that leave the folder through a symlink or junction are refused. The tool's own
-  state folder (`.stonecut`), `eula.txt`, `level.dat` and the world's chunk files cannot be written
-  through the file tools.
+  names and paths that leave the folder through a symlink or junction are refused, and every rule is
+  checked on the real path, so Windows short names (`SERVER~1.PRO`) and letter case change nothing.
+  The world folder (`level-name`) must be inside the server folder. The tool's own state folder
+  (`.stonecut`), `eula.txt`, `level.dat` and the world's chunk files cannot be written through the
+  file tools, and `read_file` hides the RCON password in every file.
+- **Code only with your yes.** Mods and anything else that runs as a program cannot be written
+  unless you turn on `allowModInstall`: `.jar` files, the `mods` and `libraries` folders, the Java
+  argument files (`user_jvm_args.txt`, `win_args.txt`, `unix_args.txt`) and programs and scripts
+  (`.exe`, `.dll`, `.so`, `.dylib`, `.bat`, `.cmd`, `.ps1`, `.sh`). A Java the agent names in
+  `plan_setup` must be a program called `java` outside the server folders.
 - **Official downloads with hash checks.** Server files come only over https from Mojang
   (piston-meta.mojang.com, piston-data.mojang.com) and NeoForged (maven.neoforged.net), and are
   checked against the hash they publish. A file with a wrong hash is deleted and nothing is
@@ -161,7 +194,7 @@ its default. Restart your agent after changing it.
 | `maxEntities` | `256` | Most entities one export, import, clear, undo snapshot or `read_entities` call may handle. |
 | `includeEntities` | `true` | Export, import, clear and undo snapshots include entities. `false` makes them blocks only; each call can also set `include_entities`. |
 | `allowFileWrites` | `true` | `false` turns off `write_file` and `export_schematic`. |
-| `allowModInstall` | `false` | `true` lets `write_file` add or change mods (`.jar` files and the `mods` folder). |
+| `allowModInstall` | `false` | `true` lets `write_file` add or change mods and other code: `.jar` files, the `mods` and `libraries` folders, Java argument files, and programs and scripts. |
 | `confirmDestructive` | `true` | `clear_blocks`, `import_schematic`, `undo`, `restore_world` and replacing an existing file need `confirm: true`, which the agent sets only after asking you. |
 | `autoBackup` | `true` | Save each changed area first so `undo` can put it back. `false` makes changes faster and turns off undo. |
 | `undoHistory` | `10` | How many changes can be undone. |
@@ -189,4 +222,10 @@ its default. Restart your agent after changing it.
   entities.
 - Block data longer than RCON allows (about 1400 bytes, for example a very full chest) is placed
   without its data, and the reply says where.
-- One call can load at most 1024 chunks. Worlds saved with LZ4 chunk compression are not read.
+- One call can load or read entities from at most 1024 chunks. Worlds saved with LZ4 chunk
+  compression are not read.
+- A schematic file may unpack to at most 64 MB plus 16 bytes per block of `maxImportBlocks`; bigger
+  or malformed files are refused before they fill memory.
+- Schematics and datapacks from other people can hold command blocks and functions that run
+  commands on the test server once placed or loaded. They stay inside that server, but only import
+  what you trust.

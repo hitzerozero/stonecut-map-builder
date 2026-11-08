@@ -79,7 +79,8 @@ export function decodeModifiedUtf8(b: Uint8Array): string {
 
 class Reader {
   pos = 0;
-  constructor(private readonly buf: Buffer) {}
+  /** tagsLeft limits the tags read: millions of tiny tags take far more memory than the bytes they come from. */
+  constructor(private readonly buf: Buffer, private tagsLeft: number) {}
 
   need(n: number): void {
     if (n < 0 || this.pos + n > this.buf.length) throw new NbtError('NBT data ends too early');
@@ -108,6 +109,7 @@ class Reader {
 
   payload(type: TagType, depth: number): Tag {
     if (depth > MAX_DEPTH) throw new NbtError('NBT nested too deeply');
+    if (--this.tagsLeft < 0) throw new NbtError('NBT data has too many tags');
     switch (type) {
       case 'byte': return { type, value: this.i8() };
       case 'short': return { type, value: this.i16() };
@@ -170,20 +172,21 @@ export interface NamedTag {
 }
 
 /** Reads one named root compound from uncompressed NBT bytes. */
-export function readNbt(buf: Buffer): NamedTag {
-  const r = new Reader(buf);
+export function readNbt(buf: Buffer, maxTags = Infinity): NamedTag {
+  const r = new Reader(buf, maxTags);
   const id = tagType(r.u8());
   if (id !== 'compound') throw new NbtError('NBT root is not a compound');
   const name = r.str();
   return { name, tag: r.payload('compound', 0) as Compound };
 }
 
-/** Accepts gzip, zlib or uncompressed NBT. */
-export function unpackNbt(buf: Buffer, maxBytes = 512 * 1024 * 1024): NamedTag {
+/** Accepts gzip, zlib or uncompressed NBT, up to maxBytes once unpacked and maxTags tags. */
+export function unpackNbt(buf: Buffer, maxBytes = 512 * 1024 * 1024, maxTags = Infinity): NamedTag {
   let raw = buf;
   if (buf[0] === 0x1f && buf[1] === 0x8b) raw = gunzipSync(buf, { maxOutputLength: maxBytes });
   else if (buf[0] === 0x78) raw = inflateSync(buf, { maxOutputLength: maxBytes });
-  return readNbt(raw);
+  if (raw.length > maxBytes) throw new NbtError(`NBT data is over ${maxBytes} bytes`);
+  return readNbt(raw, maxTags);
 }
 
 // ---- writing ----

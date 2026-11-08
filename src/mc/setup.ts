@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, isAbsolute, join } from 'node:path';
 import type { Config } from '../config.js';
 import { checkAllowedFolder } from '../safety/paths.js';
 import { downloadFile } from './download.js';
@@ -59,12 +59,29 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
 
 export class SetupError extends Error {}
 
+/**
+ * A Java the agent names must be a program called java (java.exe) given by full path, and not inside
+ * a server folder: the file tools can write there, and the tool runs this program.
+ */
+export function checkJavaPath(config: Config, path: string): void {
+  const name = basename(path).toLowerCase();
+  if (!isAbsolute(path) || (name !== 'java' && name !== 'java.exe')) throw new SetupError(`java_path must be the full path of a program called java or java.exe, not ${path}`);
+  let inServerFolder = true;
+  try {
+    checkAllowedFolder(config.serverFolders, path);
+  } catch {
+    inServerFolder = false;
+  }
+  if (inServerFolder) throw new SetupError(`java_path cannot be inside a server folder: ${path}. Use a Java installed on this computer.`);
+}
+
 export async function planSetup(config: Config, input: SetupInput): Promise<Plan> {
   if (!NAME.test(input.name)) throw new SetupError('Server name: 1-40 characters of A-Z a-z 0-9 _ -, starting with a letter or digit');
   const root = input.serverFolder ?? config.serverFolders[0]!;
   checkAllowedFolder(config.serverFolders, root);
   const folder = checkAllowedFolder(config.serverFolders, join(root, input.name));
   if (existsSync(folder) && readdirSync(folder).length > 0) throw new SetupError(`${folder} already exists and is not empty. Pick another name, or use_server to use it.`);
+  if (input.javaPath) checkJavaPath(config, input.javaPath);
 
   const entry = await resolveVersion(input.minecraft);
   const server = await serverDownload(entry);

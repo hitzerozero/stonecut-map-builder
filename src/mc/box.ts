@@ -68,6 +68,11 @@ export function splitBox(b: Box, maxVolume: number): Box[] {
   return [...splitBox({ min: b.min, max: lowMax }, maxVolume), ...splitBox({ min: highMin, max: b.max }, maxVolume)];
 }
 
+/** How many chunk columns a box touches, without listing them. */
+export function chunkCount(b: Box): number {
+  return (Math.floor(b.max[0] / 16) - Math.floor(b.min[0] / 16) + 1) * (Math.floor(b.max[2] / 16) - Math.floor(b.min[2] / 16) + 1);
+}
+
 /** Chunk columns (x, z in chunk units) a box touches. */
 export function chunksOf(b: Box): [number, number][] {
   const out: [number, number][] = [];

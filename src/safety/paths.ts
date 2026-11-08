@@ -2,12 +2,13 @@ import { existsSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 // Keeps every file the tools touch inside one folder. Checks the text of the path first
-// (no absolute paths, no "..", no drive letters or Windows device names), then resolves symlinks
-// and junctions of everything that already exists and checks again.
+// (no absolute paths, no "..", no drive letters or Windows device names), then resolves symlinks,
+// junctions and Windows short names (PROGRA~1) of everything that already exists and checks again.
+// The path it returns is that resolved one, so later checks on names see the real names.
 
 export class PathError extends Error {}
 
-const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
+const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$)(\..*)?$/i;
 const caseInsensitive = process.platform === 'win32' || process.platform === 'darwin';
 
 function norm(p: string): string {
@@ -17,7 +18,7 @@ function norm(p: string): string {
 /** True when child is root itself or inside it. Both must be absolute and resolved. */
 export function isInside(root: string, child: string): boolean {
   const rel = relative(norm(root), norm(child));
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
 function realOrSelf(p: string): string {
@@ -48,7 +49,8 @@ export interface ResolveOptions {
 
 /**
  * Resolves a path given relative to root. Throws PathError if it is absolute, uses "..",
- * names a Windows device or stream, or ends up outside root after following links.
+ * names a Windows device or stream, or ends up outside root after following links. Returns the
+ * path with links and short names resolved as far as it exists.
  */
 export function resolveInside(root: string, userPath: string, options: ResolveOptions = {}): string {
   if (typeof userPath !== 'string' || userPath.trim() === '') throw new PathError('Path is empty');
@@ -73,7 +75,9 @@ export function resolveInside(root: string, userPath: string, options: ResolveOp
   if (!isInside(rootReal, target)) throw new PathError(`Path leaves the server folder: ${userPath}`);
   const real = realDeepest(target);
   if (!isInside(rootReal, real)) throw new PathError(`Path leads outside the server folder through a link: ${userPath}`);
-  return target;
+  const first = relative(rootReal, real).split(sep)[0] ?? '';
+  if (first !== '' && hidden.includes(norm(first))) throw new PathError(`${userPath} leads into the tool's own folder, which cannot be read or changed`);
+  return real;
 }
 
 /** The path relative to root, with forward slashes, for showing to the agent. */

@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
+import { connect, createServer } from 'node:net';
+import { uptime } from 'node:os';
 import { join } from 'node:path';
 import { RCON_HOST } from '../safety/address.js';
+import { resolveInside } from '../safety/paths.js';
 import { Rcon } from '../rcon/rcon.js';
 import { EULA_URL, type Loader } from './versions.js';
 import { enforceLocked, readProperties } from './properties.js';
@@ -52,14 +54,29 @@ export function writeEula(dir: string, accepted: boolean): void {
   );
 }
 
+/**
+ * True when no program on this computer uses the port. Listens on 127.0.0.1 for a moment (never on
+ * a network address, so no firewall question comes up) and tries to connect there, which also
+ * finds a program that listens on every address.
+ */
 export function portFree(port: number): Promise<boolean> {
-  const tryHost = (host: string) =>
+  const canListen = new Promise<boolean>((resolve) => {
+    const s = createServer();
+    s.once('error', () => resolve(false));
+    s.listen({ host: RCON_HOST, port, exclusive: true }, () => s.close(() => resolve(true)));
+  });
+  const answers = () =>
     new Promise<boolean>((resolve) => {
-      const s = createServer();
-      s.once('error', () => resolve(false));
-      s.listen({ host, port, exclusive: true }, () => s.close(() => resolve(true)));
+      const c = connect({ host: RCON_HOST, port });
+      const done = (open: boolean) => {
+        c.destroy();
+        resolve(open);
+      };
+      c.setTimeout(500, () => done(false));
+      c.once('connect', () => done(true));
+      c.once('error', () => done(false));
     });
-  return tryHost(RCON_HOST).then((a) => (a ? tryHost('0.0.0.0') : false));
+  return canListen.then(async (free) => free && !(await answers()));
 }
 
 export async function findFreePort(start: number, avoid: number[] = []): Promise<number> {
@@ -133,12 +150,20 @@ export class TestServer {
   get gamePort(): number {
     return Number(this.properties().get('server-port') ?? 25565);
   }
+  /** The world folder named by level-name. A name that leaves the server folder is refused. */
   get worldDir(): string {
-    return join(this.dir, this.properties().get('level-name') || 'world');
+    const name = this.properties().get('level-name') || 'world';
+    try {
+      return resolveInside(this.dir, name, { hidden: [STATE_DIR] });
+    } catch (e) {
+      throw new ServerError(`level-name in server.properties must be a folder inside the server folder, not "${name}": ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   private pid(): number | null {
     if (!existsSync(this.pidFile)) return null;
+    // Written before the computer last started: that process is gone, and the number may now belong to another program.
+    if (statSync(this.pidFile).mtimeMs < Date.now() - uptime() * 1000) return null;
     const pid = Number(readFileSync(this.pidFile, 'utf8').trim());
     return Number.isInteger(pid) && pid > 0 && alive(pid) ? pid : null;
   }
@@ -170,6 +195,7 @@ export class TestServer {
       throw new ServerError(`The Minecraft EULA is not accepted for this server. Show the person ${EULA_URL} and ask; if they accept, call accept_eula.`);
     }
     if (!existsSync(this.meta.javaPath)) throw new ServerError(`Java not found at ${this.meta.javaPath}. Run plan_setup to see what is needed.`);
+    void this.worldDir; // Minecraft makes the world where level-name says; refused if that leaves the server folder.
     const fixed = enforceLocked(this.dir, this.meta.rconPort);
     for (const [what, port] of [['Game', this.gamePort], ['RCON', this.meta.rconPort]] as const) {
       if (!(await portFree(port))) throw new ServerError(`${what} port ${port} is in use by another program. Pick another port in server.properties.`);

@@ -8,6 +8,10 @@ export const HELP = `stonecut-map-builder ${VERSION}
 
 Without options it runs the MCP server on stdio (an MCP client starts it for you).
 
+Commands:
+  doctor          Check Node, the settings file, Java, the test server, the skill and whether the
+                  MCP server starts, and say how to fix what fails. Changes nothing.
+
 Options:
   --config-path   Print where the settings file is read from.
   --init-config   Write the settings file with every setting at its default, if it does not exist.

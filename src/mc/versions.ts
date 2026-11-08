@@ -29,6 +29,19 @@ export function isSupportedVersion(id: string): boolean {
   return versionParts(id) !== null && compareVersions(id, MIN_VERSION) >= 0;
 }
 
+/** The Java each range of releases needs, as Mojang publishes it per version. For doctor, which stays offline. */
+export const JAVA_FOR_MINECRAFT = [
+  { java: 17, minecraft: '1.20.1 to 1.20.4' },
+  { java: 21, minecraft: '1.20.5 to 1.21.11' },
+  { java: 25, minecraft: '26.1 and newer' },
+] as const;
+
+export function javaNeededFor(minecraft: string): number | null {
+  if (!isSupportedVersion(minecraft)) return null;
+  if (compareVersions(minecraft, '1.20.5') < 0) return 17;
+  return compareVersions(minecraft, '26.1') < 0 ? 21 : 25;
+}
+
 export interface ManifestEntry {
   id: string;
   type: string;
@@ -89,7 +102,8 @@ export function neoforgePrefix(mc: string): { artifact: 'neoforge' | 'forge'; pr
 
 export function pickNeoForge(mc: string, versions: string[]): NeoForgeBuild | null {
   const { artifact, prefix } = neoforgePrefix(mc);
-  const usable = versions.filter((v) => v.startsWith(prefix) && !/alpha|\+|snapshot|rc/i.test(v));
+  // The version goes into a URL and a folder name, so only plain version characters are used.
+  const usable = versions.filter((v) => v.startsWith(prefix) && /^[\w.-]+$/.test(v) && !/alpha|snapshot|rc/i.test(v));
   const num = (v: string) => v.slice(prefix.length).split(/[.-]/).filter((x) => /^\d+$/.test(x)).map(Number);
   const cmp = (a: string, b: string) => {
     const na = num(a), nb = num(b);
