@@ -163,7 +163,7 @@ async function checkStart(start: () => Promise<number>, settingsOk: boolean): Pr
     return {
       ok: false,
       label: `The MCP server does not start: ${message(e)}`,
-      fix: settingsOk ? `Check the message above. To add it to Claude Code again: ${ADD_COMMAND}` : 'Fix the settings file first (see above).',
+      fix: settingsOk ? `Check the message above. To add it to Claude Code again: ${ADD_COMMAND}. In VS Code, where the claude command is usually missing, use the VS Code command in the README's setup step 3.` : 'Fix the settings file first (see above).',
     };
   }
 }

@@ -145,6 +145,6 @@ it('fails when another program holds a port of the stopped server', async () => 
 
 it('fails when the MCP server does not start or lists the wrong tools', async () => {
   const down = await doctor({ start: async () => Promise.reject(new Error('Config file x has a problem')) });
-  expect(find(down.checks, /does not start/)).toMatchObject({ ok: false, label: expect.stringMatching(/Config file x has a problem/), fix: expect.stringMatching(/claude mcp add/) });
+  expect(find(down.checks, /does not start/)).toMatchObject({ ok: false, label: expect.stringMatching(/Config file x has a problem/), fix: expect.stringMatching(/claude mcp add.*VS Code/) });
   expect(find((await doctor({ start: async () => 3 })).checks, /lists 3 tools/).ok).toBe(false);
 });

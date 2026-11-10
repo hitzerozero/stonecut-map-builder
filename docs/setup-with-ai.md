@@ -4,8 +4,29 @@ This is the prompt for the "Set up with AI" button on the downloads page. The pe
 into their agent (for example Claude Code) after adding the tool with the one command shown on the
 page:
 
+If Claude Code is installed as a command-line tool (the `claude` command works in a terminal):
+
 - macOS and Linux: `claude mcp add --scope user stonecut-map-builder -- npx -y stonecut-map-builder`
 - Windows: `claude mcp add --scope user stonecut-map-builder -- cmd /c npx -y stonecut-map-builder`
+
+If they only use the Claude Code extension in VS Code, `claude` is usually not on their PATH (the
+terminal says "claude is not recognized" or "command not found"). The extension ships its own copy
+of the CLI; these commands find the newest one and run it:
+
+- Windows (PowerShell):
+
+  ```powershell
+  & (Get-ChildItem "$env:USERPROFILE\.vscode\extensions\anthropic.claude-code-*\resources\native-binary\claude.exe" | Sort-Object { [version]($_.FullName -replace '.*claude-code-([\d.]+).*','$1') } | Select-Object -Last 1).FullName mcp add --scope user stonecut-map-builder -- cmd /c npx -y stonecut-map-builder
+  ```
+
+- macOS and Linux:
+
+  ```sh
+  "$(ls -d ~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude | sort -V | tail -n 1)" mcp add --scope user stonecut-map-builder -- npx -y stonecut-map-builder
+  ```
+
+After adding it, restart Claude Code (in VS Code: run "Developer: Reload Window" from the command
+palette).
 
 ## The prompt
 
@@ -15,10 +36,19 @@ this computer. Follow these steps in order, and ask me before you install, downl
 anything.
 
 1. Check that the MCP server "stonecut-map-builder" is connected and that you can call its
-   status tool. If it is not connected, tell me the one command to add it for my system
-   (macOS/Linux: claude mcp add --scope user stonecut-map-builder -- npx -y stonecut-map-builder,
-   Windows: claude mcp add --scope user stonecut-map-builder -- cmd /c npx -y stonecut-map-builder),
-   ask me to restart you after running it, and stop here.
+   status tool. If it is not connected, tell me the one command to add it for my system, ask me
+   to restart you after running it, and stop here.
+   - Claude Code in a terminal, macOS/Linux:
+     claude mcp add --scope user stonecut-map-builder -- npx -y stonecut-map-builder
+   - Claude Code in a terminal, Windows:
+     claude mcp add --scope user stonecut-map-builder -- cmd /c npx -y stonecut-map-builder
+   - Claude Code in VS Code (the claude command is usually not installed, so use the copy
+     bundled with the extension), Windows PowerShell:
+     & (Get-ChildItem "$env:USERPROFILE\.vscode\extensions\anthropic.claude-code-*\resources\native-binary\claude.exe" | Sort-Object { [version]($_.FullName -replace '.*claude-code-([\d.]+).*','$1') } | Select-Object -Last 1).FullName mcp add --scope user stonecut-map-builder -- cmd /c npx -y stonecut-map-builder
+   - Claude Code in VS Code, macOS/Linux:
+     "$(ls -d ~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude | sort -V | tail -n 1)" mcp add --scope user stonecut-map-builder -- npx -y stonecut-map-builder
+   If you are running inside VS Code, give me the VS Code command. To restart in VS Code I run
+   "Developer: Reload Window" from the command palette.
 
 2. Install the map-builder skill. Run: npx -y stonecut-map-builder --skill-path
    It prints the folder of the bundled skill. Ask me, then copy that map-builder folder into my

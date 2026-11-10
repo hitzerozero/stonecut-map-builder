@@ -13,10 +13,25 @@ paste on any server. Free and open source under the MIT license.
 
 1. Install Node.js 20 or newer from https://nodejs.org (the LTS download).
 2. Have Claude Code installed and signed in.
-3. Add the tool to Claude Code:
+3. Add the tool to Claude Code. If the `claude` command works in your terminal:
    - macOS and Linux: `claude mcp add --scope user stonecut-map-builder -- npx -y stonecut-map-builder`
    - Windows: `claude mcp add --scope user stonecut-map-builder -- cmd /c npx -y stonecut-map-builder`
-4. Start Claude Code, type `/mcp` and check that stonecut-map-builder shows as connected.
+
+   If you only use the Claude Code extension in VS Code, `claude` is usually not on your PATH
+   ("not recognized" / "command not found"). Run the copy bundled with the extension instead:
+   - Windows (PowerShell):
+
+     ```powershell
+     & (Get-ChildItem "$env:USERPROFILE\.vscode\extensions\anthropic.claude-code-*\resources\native-binary\claude.exe" | Sort-Object { [version]($_.FullName -replace '.*claude-code-([\d.]+).*','$1') } | Select-Object -Last 1).FullName mcp add --scope user stonecut-map-builder -- cmd /c npx -y stonecut-map-builder
+     ```
+
+   - macOS and Linux:
+
+     ```sh
+     "$(ls -d ~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude | sort -V | tail -n 1)" mcp add --scope user stonecut-map-builder -- npx -y stonecut-map-builder
+     ```
+4. Start Claude Code (in VS Code: "Developer: Reload Window"), type `/mcp` and check that
+   stonecut-map-builder shows as connected.
 5. Paste the setup prompt from [docs/setup-with-ai.md](docs/setup-with-ai.md). The agent installs
    the skill (it asks first), asks your Minecraft version and modpack, shows what it will download,
    and asks you to accept the Minecraft EULA. Nothing is installed without your yes.
