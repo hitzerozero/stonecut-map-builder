@@ -1,6 +1,6 @@
 # Stonecut Map Builder
 
-Website: https://stonecut.studio/resources | npm: https://www.npmjs.com/package/stonecut-map-builder
+Website: https://stonecut.studio/resources | npm: https://www.npmjs.com/package/stonecut-map-builder | YouTube: https://www.youtube.com/@StonecutStudios (videos coming soon)
 
 Let your AI agent build Minecraft maps for you. Stonecut Map Builder gives Claude Code (or any agent
 that supports MCP) its own private Minecraft test server on your computer. The agent sets it up,
