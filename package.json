@@ -1,6 +1,6 @@
 {
   "name": "stonecut-map-builder",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server and skill that let a coding agent build Minecraft maps on a private test server on your own computer.",
   "license": "MIT",
   "author": "Stonecut Studio",
